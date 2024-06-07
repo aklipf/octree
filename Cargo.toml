@@ -1,0 +1,16 @@
+[package]
+name = "octree"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+
+[lib]
+crate-type = ["lib"]
+test = true
+bench = true
+doc = true
+
+[[example]]
+name = "simple"
