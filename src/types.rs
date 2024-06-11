@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use glam::{DVec3, Vec3};
 use num_traits::{Float, PrimInt, Unsigned};
 
@@ -23,12 +21,16 @@ impl Vector3D for DVec3 {
 pub trait Index: PrimInt + Unsigned + Into<usize> {
     fn mask() -> Self;
     fn empty() -> Self;
-    fn idx(block: usize, child: usize) -> Self;
+    fn root() -> Self;
+    fn node_idx(block: usize, child: usize) -> Self;
+    fn points_idx(block: usize) -> Self;
     fn child(&self) -> usize;
     fn node_block(&self) -> usize;
     fn points_block(&self) -> usize;
+    fn to_tuple(&self) -> (usize, usize);
     fn is_leaf(&self) -> bool;
     fn is_empty(&self) -> bool;
+    fn is_root(&self) -> bool;
 }
 
 impl Index for usize {
@@ -43,8 +45,18 @@ impl Index for usize {
     }
 
     #[inline]
-    fn idx(block: usize, child: usize) -> Self {
+    fn root() -> Self {
+        Self::max_value() >> 1
+    }
+
+    #[inline]
+    fn node_idx(block: usize, child: usize) -> Self {
         (block << 3) | child
+    }
+
+    #[inline]
+    fn points_idx(block: usize) -> Self {
+        block | (!(Self::max_value() >> 1))
     }
 
     #[inline]
@@ -63,6 +75,11 @@ impl Index for usize {
     }
 
     #[inline]
+    fn to_tuple(&self) -> (usize, usize) {
+        (self.node_block(), self.child())
+    }
+
+    #[inline]
     fn is_leaf(&self) -> bool {
         (*self & (!(Self::max_value() >> 1))) != 0usize
     }
@@ -70,6 +87,11 @@ impl Index for usize {
     #[inline]
     fn is_empty(&self) -> bool {
         *self == Self::empty()
+    }
+
+    #[inline]
+    fn is_root(&self) -> bool {
+        *self == Self::root()
     }
 }
 
