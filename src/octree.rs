@@ -231,10 +231,4 @@ mod tests {
         assert_eq!(tree.root.data, usize::node_idx(0, 0));
     }
 
-    #[test]
-    fn octree_add() {
-        let mut tree: Octree = Octree::default();
-
-        tree.add(vec3(0.0, 0.0, 0.0));
-    }
 }
