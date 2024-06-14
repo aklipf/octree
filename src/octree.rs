@@ -1,7 +1,4 @@
-use std::io::empty;
-
 use glam::Vec3;
-use num_traits::One;
 
 use crate::types::Index;
 
@@ -12,7 +9,8 @@ pub(crate) struct Node<I: Index> {
 }
 
 #[derive(Debug)]
-pub(crate) struct PointsBlock<const B: usize> {
+pub(crate) struct PointsBlock<I: Index, const B: usize> {
+    pub(crate) parent: I,
     pub(crate) points: [Vec3; B],
 }
 
@@ -26,7 +24,7 @@ pub(crate) struct NodeBlock<I: Index> {
 pub struct Octree<I: Index = usize, const B: usize = 5> {
     pub(crate) root: Node<I>,
     pub(crate) nodes: Vec<NodeBlock<I>>,
-    pub(crate) points: Vec<PointsBlock<B>>,
+    pub(crate) points: Vec<PointsBlock<I, B>>,
     pub(crate) center: Vec3,
     pub(crate) size: f32,
 }
@@ -40,9 +38,10 @@ impl<I: Index> Default for Node<I> {
     }
 }
 
-impl<const B: usize> Default for PointsBlock<B> {
+impl<I: Index, const B: usize> Default for PointsBlock<I, B> {
     fn default() -> Self {
-        PointsBlock::<B> {
+        PointsBlock::<I, B> {
+            parent: I::empty(),
             points: [Vec3::ZERO; B],
         }
     }
@@ -127,7 +126,8 @@ impl<I: Index, const B: usize> Octree<I, B> {
 
         if node.data.is_empty() {
             node.data = I::points_idx(points_len);
-            let mut leaf_points: PointsBlock<B> = Default::default();
+            let mut leaf_points: PointsBlock<I, B> = Default::default();
+            leaf_points.parent = I::node_idx(node_idx.0, node_idx.1);
             leaf_points.points[0] = point;
             self.points.push(leaf_points);
 
@@ -210,7 +210,7 @@ impl<I: Index, const B: usize> Octree<I, B> {
 mod tests {
     use glam::{vec3, Vec3};
 
-    use crate::types::Index;
+    use crate::types::{Index, Vector3D};
 
     use super::Octree;
 
@@ -231,4 +231,70 @@ mod tests {
         assert_eq!(tree.root.data, usize::node_idx(0, 0));
     }
 
+    #[test]
+    fn octree_add() {
+        let mut tree: Octree<usize, 5> = Octree::default();
+
+        tree.add(vec3(-0.1, -0.1, -0.1));
+        tree.add(vec3(0.1, 0.1, 0.1));
+        tree.add(vec3(0.15, 0.15, 0.15));
+        tree.add(vec3(0.2, 0.2, 0.2));
+        tree.add(vec3(0.3, 0.3, 0.3));
+        tree.add(vec3(0.35, 0.35, 0.35));
+        tree.add(vec3(0.4, 0.4, 0.4));
+
+        assert_eq!(tree.center, Vec3::ZERO);
+        assert_eq!(tree.size, 2.0);
+        assert_eq!(tree.root.data, 0);
+        assert_eq!(tree.root.size, 7);
+        assert_eq!(tree.nodes.len(), 3);
+        assert_eq!(tree.points.len(), 3);
+
+        // node block 0
+        assert_eq!(tree.nodes[0].parent, usize::root());
+        assert_eq!(tree.nodes[0].nodes[0].data, usize::node_idx(1, 0));
+        assert_eq!(tree.nodes[0].nodes[0].size, 6);
+        for i in 1..7 {
+            assert_eq!(tree.nodes[0].nodes[i].data, usize::empty());
+            assert_eq!(tree.nodes[0].nodes[i].size, 0);
+        }
+        assert_eq!(tree.nodes[0].nodes[7].data, usize::points_idx(0));
+        assert_eq!(tree.nodes[0].nodes[7].size, 1);
+
+        // node block 1
+        assert_eq!(tree.nodes[1].parent, usize::node_idx(0, 0));
+        for i in 0..7 {
+            assert_eq!(tree.nodes[1].nodes[i].data, usize::empty());
+            assert_eq!(tree.nodes[1].nodes[i].size, 0);
+        }
+        assert_eq!(tree.nodes[1].nodes[7].data, usize::node_idx(2, 0));
+        assert_eq!(tree.nodes[1].nodes[7].size, 6);
+
+        // node block 2
+        assert_eq!(tree.nodes[2].parent, usize::node_idx(1, 7));
+        assert_eq!(tree.nodes[2].nodes[0].data, usize::points_idx(1));
+        assert_eq!(tree.nodes[2].nodes[0].size, 3);
+        for i in 1..7 {
+            assert_eq!(tree.nodes[2].nodes[i].data, usize::empty());
+            assert_eq!(tree.nodes[2].nodes[i].size, 0);
+        }
+        assert_eq!(tree.nodes[2].nodes[7].data, usize::points_idx(2));
+        assert_eq!(tree.nodes[2].nodes[7].size, 3);
+
+        // points block 0
+        assert_eq!(tree.points[0].parent, usize::node_idx(0, 7));
+        assert_eq!(tree.points[0].points[0], vec3(-0.1, -0.1, -0.1));
+
+        // points block 1
+        assert_eq!(tree.points[1].parent, usize::node_idx(2, 0));
+        assert_eq!(tree.points[1].points[0], vec3(0.3, 0.3, 0.3));
+        assert_eq!(tree.points[1].points[1], vec3(0.35, 0.35, 0.35));
+        assert_eq!(tree.points[1].points[2], vec3(0.4, 0.4, 0.4));
+
+        // points block 2
+        assert_eq!(tree.points[2].parent, usize::node_idx(2, 7));
+        assert_eq!(tree.points[2].points[0], vec3(0.1, 0.1, 0.1));
+        assert_eq!(tree.points[2].points[1], vec3(0.15, 0.15, 0.15));
+        assert_eq!(tree.points[2].points[2], vec3(0.2, 0.2, 0.2));
+    }
 }

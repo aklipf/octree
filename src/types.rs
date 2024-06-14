@@ -18,7 +18,7 @@ impl Vector3D for DVec3 {
     const ZERO: Self = DVec3::ZERO;
 }
 
-pub trait Index: PrimInt + Unsigned + Into<usize> {
+pub trait Index: PrimInt + Unsigned {
     fn mask() -> Self;
     fn empty() -> Self;
     fn root() -> Self;
@@ -31,6 +31,7 @@ pub trait Index: PrimInt + Unsigned + Into<usize> {
     fn is_leaf(&self) -> bool;
     fn is_empty(&self) -> bool;
     fn is_root(&self) -> bool;
+    fn into(self) -> usize;
 }
 
 impl Index for usize {
@@ -93,7 +94,79 @@ impl Index for usize {
     fn is_root(&self) -> bool {
         *self == Self::root()
     }
+
+    #[inline]
+    fn into(self) -> usize {
+        self
+    }
 }
+
+/*impl Index for u32 {
+    #[inline]
+    fn mask() -> Self {
+        !(Self::max_value() << 3)
+    }
+
+    #[inline]
+    fn empty() -> Self {
+        Self::max_value()
+    }
+
+    #[inline]
+    fn root() -> Self {
+        Self::max_value() >> 1
+    }
+
+    #[inline]
+    fn node_idx(block: usize, child: usize) -> Self {
+        ((block << 3) | child).try_into().unwrap()
+    }
+
+    #[inline]
+    fn points_idx(block: usize) -> Self {
+        (block as u32) | (!(Self::max_value() >> 1))
+    }
+
+    #[inline]
+    fn child(&self) -> usize {
+        (*self & Self::mask()) as usize
+    }
+
+    #[inline]
+    fn node_block(&self) -> usize {
+        (*self >> 3) as usize
+    }
+
+    #[inline]
+    fn points_block(&self) -> usize {
+        (*self & (Self::max_value() >> 1)) as usize
+    }
+
+    #[inline]
+    fn to_tuple(&self) -> (usize, usize) {
+        (self.node_block(), self.child())
+    }
+
+    #[inline]
+    fn is_leaf(&self) -> bool {
+        (*self & (!(Self::max_value() >> 1))) != 0
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        *self == Self::empty()
+    }
+
+    #[inline]
+    fn is_root(&self) -> bool {
+        *self == Self::root()
+    }
+
+    #[inline]
+    fn into(self) -> usize {
+        self as usize
+    }
+}*/
 
 #[cfg(test)]
 mod tests {
@@ -116,17 +189,17 @@ mod tests {
 
     #[test]
     fn test_block() {
-        assert_eq!(0.node_block(), 0);
-        assert_eq!(4.node_block(), 0);
-        assert_eq!(7.node_block(), 0);
-        assert_eq!(16.node_block(), 2);
-        assert_eq!(2980.node_block(), 372);
-        assert_eq!(6031.node_block(), 753);
+        assert_eq!(0usize.node_block(), 0);
+        assert_eq!(4usize.node_block(), 0);
+        assert_eq!(7usize.node_block(), 0);
+        assert_eq!(16usize.node_block(), 2);
+        assert_eq!(2980usize.node_block(), 372);
+        assert_eq!(6031usize.node_block(), 753);
     }
 
     #[test]
     fn test_is_empty() {
-        assert_eq!(0.is_empty(), false);
+        assert_eq!(0usize.is_empty(), false);
         assert_eq!((usize::max_value() >> 1).is_empty(), false);
         assert_eq!(((usize::max_value() >> 1) + 1).is_empty(), false);
         assert_eq!(usize::max_value().is_empty(), true);
@@ -134,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_is_leaf() {
-        assert_eq!(0.is_leaf(), false);
+        assert_eq!(0usize.is_leaf(), false);
         assert_eq!((usize::max_value() >> 1).is_leaf(), false);
         assert_eq!(((usize::max_value() >> 1) + 1).is_leaf(), true);
         assert_eq!(usize::max_value().is_leaf(), true);
