@@ -4,22 +4,28 @@ extern crate test;
 
 use glam::Vec3;
 use octree::octree::Octree;
-use test::Bencher;
-use rand::{Rng, thread_rng};
 use rand::distributions::Uniform;
+use rand::{thread_rng, Rng};
+use test::Bencher;
 
-fn add_n_points(b: &mut Bencher, n:i32){
+fn add_n_points(b: &mut Bencher, n: i32) {
     let mut rng = thread_rng();
     let side = Uniform::new(-1.0f32, 1.0f32);
 
-    let mut points:Vec<Vec3>=Default::default();
+    let mut points: Vec<Vec3> = Default::default();
     for _ in 0..n {
         let point = Vec3::new(rng.sample(side), rng.sample(side), rng.sample(side));
         points.push(point);
     }
 
     b.iter(|| {
-        points.iter().fold(&mut Octree::<usize>::default(),|tree,p| {tree.add(*p);tree});
+        Octree::fixed_depth(points, 10);
+        points
+            .iter()
+            .fold(&mut Octree::<usize>::default(), |tree, p| {
+                tree.add(*p);
+                tree
+            });
     });
 }
 

@@ -1,300 +1,277 @@
 use glam::Vec3;
 
-use crate::types::Index;
+use crate::iterators::subdivide::Subdivide;
 
-#[derive(Debug)]
-pub(crate) struct Node<I: Index> {
-    pub(crate) data: I,
-    pub(crate) size: I,
+pub trait AsPoint {
+    fn get_point(&self) -> &Vec3;
+}
+
+impl AsPoint for Vec3 {
+    #[inline]
+    fn get_point(&self) -> &Vec3 {
+        return self;
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct StemNode {
+    pub(crate) childs_idx: [u32; 8],
 }
 
 #[derive(Debug)]
-pub(crate) struct PointsBlock<I: Index, const B: usize> {
-    pub(crate) parent: I,
-    pub(crate) points: [Vec3; B],
+pub(crate) struct LeafNode {
+    pub(crate) begin: u32,
+    pub(crate) end: u32,
 }
 
 #[derive(Debug)]
-pub(crate) struct NodeBlock<I: Index> {
-    pub(crate) parent: I,
-    pub(crate) nodes: [Node<I>; 8],
-}
-
-#[derive(Debug)]
-pub struct Octree<I: Index = usize, const B: usize = 5> {
-    pub(crate) root: Node<I>,
-    pub(crate) nodes: Vec<NodeBlock<I>>,
-    pub(crate) points: Vec<PointsBlock<I, B>>,
+pub struct Octree<T: AsPoint + Clone = Vec3> {
+    pub(crate) stems: Vec<StemNode>,
+    pub(crate) leaf: Vec<LeafNode>,
+    pub(crate) indices: Vec<u32>,
+    pub(crate) points: Vec<T>,
     pub(crate) center: Vec3,
     pub(crate) size: f32,
 }
 
-impl<I: Index> Default for Node<I> {
-    fn default() -> Self {
-        Node::<I> {
-            data: I::empty(),
-            size: I::zero(),
+impl<T: AsPoint + Clone> Octree<T> {
+    pub fn fixed_depth(points: &[T], depth: u32) -> Octree<T> {
+        let (center, size) = Self::get_dimentions(points);
+
+        let mut tree = Octree {
+            stems: Default::default(),
+            leaf: Default::default(),
+            indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
+            points: points.to_vec(),
+            center: center,
+            size: size,
+        };
+        tree.fixed_depth_recursive(0, points.len() as u32, center, size, depth);
+
+        tree
+    }
+
+    pub fn variable_depth(points: &[T], bucket_size: u32) -> Octree<T> {
+        let (center, size) = Self::get_dimentions(points);
+
+        let mut tree = Octree {
+            stems: Default::default(),
+            leaf: Default::default(),
+            indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
+            points: points.to_vec(),
+            center: center,
+            size: size,
+        };
+        tree.variable_depth_recursive(0, points.len() as u32, center, size, bucket_size);
+
+        tree
+    }
+
+    fn get_dimentions(points: &[T]) -> (Vec3, f32) {
+        let mut min: Vec3 = Vec3::INFINITY;
+        let mut max: Vec3 = Vec3::NEG_INFINITY;
+
+        for x in points {
+            min = min.min(*x.get_point());
+            max = max.max(*x.get_point());
         }
-    }
-}
 
-impl<I: Index, const B: usize> Default for PointsBlock<I, B> {
-    fn default() -> Self {
-        PointsBlock::<I, B> {
-            parent: I::empty(),
-            points: [Vec3::ZERO; B],
-        }
-    }
-}
+        let center = 0.5 * (max + min);
+        let size = (max - min).max_element();
 
-impl<I: Index, const B: usize> Default for Octree<I, B> {
-    fn default() -> Self {
-        Self {
-            root: Node {
-                data: I::node_idx(0, 0),
-                size: I::zero(),
-            },
-            nodes: vec![NodeBlock {
-                parent: I::root(),
-                nodes: Default::default(),
-            }],
-            points: Default::default(),
-            center: Vec3::ZERO,
-            size: 2.0,
-        }
-    }
-}
-
-impl<I: Index, const B: usize> Octree<I, B> {
-    pub fn add(&mut self, point: Vec3) {
-        self.add_to(I::root().to_tuple(), point, self.center, self.size);
-    }
-
-    pub fn len(&self) -> usize {
-        self.root.size.into()
+        (center, size)
     }
 
     #[inline]
-    fn add_to(
-        &mut self,
-        node_idx: (usize, usize),
-        point: Vec3,
-        center: Vec3,
-        size: f32,
-    ) -> (usize, usize) {
-        let node: &mut Node<I> = self.mut_node(node_idx);
-        node.size = node.size + I::one();
-
-        let mut center: Vec3 = center;
-        let mut size: f32 = size;
-
-        let node_idx = self.locate_increment(node_idx, point, &mut center, &mut size);
-        self.insert(node_idx, point, center, size)
+    fn get_points(&self, idx: u32) -> &Vec3 {
+        &self.points[self.indices[idx as usize] as usize].get_point()
     }
 
-    fn locate_increment(
-        &mut self,
-        node_idx: (usize, usize),
-        point: Vec3,
-        center: &mut Vec3,
-        size: &mut f32,
-    ) -> (usize, usize) {
-        let mut current: &mut Node<I> = self.mut_node(node_idx);
-        let mut child_idx: usize = 0;
-        let mut block_idx: usize = 0;
-
-        while !current.data.is_leaf() {
-            child_idx = Self::branch(point, center, size);
-            block_idx = current.data.node_block();
-            current = self.mut_node((block_idx, child_idx));
-            current.size = current.size + I::one();
-        }
-
-        (block_idx, child_idx)
+    #[inline]
+    fn swap_points(&mut self, idx_a: u32, idx_b: u32) {
+        self.indices.swap(idx_a as usize, idx_b as usize);
     }
 
-    fn insert(
-        &mut self,
-        node_idx: (usize, usize),
-        point: Vec3,
-        center: Vec3,
-        size: f32,
-    ) -> (usize, usize) {
-        let points_len: usize = self.points.len();
-        let node: &mut Node<I> = self.mut_node(node_idx);
-        let idx: usize = node.size.into();
-
-        if node.data.is_empty() {
-            node.data = I::points_idx(points_len);
-            let mut leaf_points: PointsBlock<I, B> = Default::default();
-            leaf_points.parent = I::node_idx(node_idx.0, node_idx.1);
-            leaf_points.points[0] = point;
-            self.points.push(leaf_points);
-
-            return node_idx;
+    fn split<const DIM: usize>(&mut self, begin: u32, end: u32, pivot: f32) -> u32 {
+        if begin >= end {
+            return begin;
         }
+        let mut idx_down: u32 = begin;
+        let mut idx_up: u32 = end - 1;
 
-        if idx <= B {
-            let points_idx = node.data.points_block();
-            self.points[points_idx].points[idx - 1] = point;
+        while idx_down <= idx_up {
+            let error_down = self.get_points(idx_down)[DIM] >= pivot;
+            let error_up = self.get_points(idx_up)[DIM] < pivot;
 
-            return node_idx;
-        }
+            if error_down && error_up {
+                self.swap_points(idx_down, idx_up);
+                idx_down += 1;
+                idx_up -= 1;
+                continue;
+            }
 
-        self.subdivide(node_idx, center, size);
-        self.add_to(node_idx, point, center, size)
-    }
-
-    fn subdivide(&mut self, node_idx: (usize, usize), center: Vec3, size: f32) {
-        let new_block = self.nodes.len();
-        let node: &mut Node<I> = self.mut_node(node_idx);
-
-        // backup point informations
-        let points_block: usize = node.data.points_block();
-
-        // setup the node with childs
-        node.data = I::node_idx(new_block, 0);
-        node.size = I::zero();
-        self.nodes.push(NodeBlock {
-            parent: I::node_idx(node_idx.0, node_idx.1),
-            nodes: Default::default(),
-        });
-
-        // insert the previous points into the new nodes
-        let mut last_node_idx: (usize, usize) = (0, 0);
-        for point in self.points[points_block].points {
-            let current_idx: (usize, usize) = self.add_to(node_idx, point, center, size);
-            let current_data = self.node(current_idx).data;
-            if (!current_data.is_empty()) && current_data.points_block() == (self.points.len() - 1)
-            {
-                last_node_idx = current_idx;
+            if !error_down {
+                idx_down += 1;
+                if idx_down >= end {
+                    return end;
+                }
+            }
+            if !error_up {
+                if idx_up <= begin {
+                    return begin;
+                }
+                idx_up -= 1;
             }
         }
 
-        // free useless PointsBlock points_block
-        self.points[points_block] = self.points.pop().unwrap();
-
-        let node: &mut Node<I> = self.mut_node(last_node_idx);
-        node.data = I::points_idx(points_block);
+        idx_down
     }
 
-    #[inline]
-    fn node(&self, idx: (usize, usize)) -> &Node<I> {
-        if idx.0 == usize::root().node_block() {
-            return &self.root;
+    // split points into an octree branch and return the delimiter id
+    fn subdivide(&mut self, begin: u32, end: u32, center: Vec3, size: f32) -> Subdivide {
+        let pivot_x = self.split::<0>(begin, end, center.x);
+
+        let pivot_y_low = self.split::<1>(begin, pivot_x, center.y);
+        let pivot_y_high = self.split::<1>(pivot_x, end, center.y);
+
+        let pivot_z_low_low = self.split::<2>(begin, pivot_y_low, center.y);
+        let pivot_z_low_high = self.split::<2>(pivot_y_low, pivot_x, center.y);
+        let pivot_z_high_low = self.split::<2>(pivot_x, pivot_y_high, center.y);
+        let pivot_z_high_high = self.split::<2>(pivot_y_high, end, center.y);
+
+        Subdivide {
+            current: 0,
+            delimiter: [
+                begin as u32,
+                pivot_z_low_low as u32,
+                pivot_y_low as u32,
+                pivot_z_low_high as u32,
+                pivot_x as u32,
+                pivot_z_high_low as u32,
+                pivot_y_high as u32,
+                pivot_z_high_high as u32,
+                end as u32,
+            ],
+            center: center,
+            size: size,
+        }
+    }
+
+    fn fixed_depth_recursive(
+        &mut self,
+        begin: u32,
+        end: u32,
+        center: Vec3,
+        size: f32,
+        depth: u32,
+    ) -> u32 {
+        if depth == 0 || (end - begin) <= 1 {
+            let idx = 0x80000000 | (self.leaf.len() as u32);
+            self.leaf.push(LeafNode {
+                begin: begin as u32,
+                end: end as u32,
+            });
+            return idx;
         }
 
-        &self.nodes[idx.0].nodes[idx.1]
-    }
+        let mut node: StemNode = Default::default();
 
-    #[inline]
-    fn mut_node(&mut self, idx: (usize, usize)) -> &mut Node<I> {
-        if idx.0 == usize::root().node_block() {
-            return &mut self.root;
+        for (idx, subspace) in self.subdivide(begin, end, center, size).enumerate() {
+            let child_idx = self.fixed_depth_recursive(
+                subspace.begin,
+                subspace.end,
+                subspace.center,
+                subspace.size,
+                depth - 1,
+            );
+            node.childs_idx[idx] = child_idx as u32;
         }
 
-        &mut self.nodes[idx.0].nodes[idx.1]
+        let node_idx = self.stems.len() as u32;
+        self.stems.push(node);
+
+        node_idx
     }
 
-    #[inline]
-    fn branch(point: Vec3, center: &mut Vec3, size: &mut f32) -> usize {
-        let diff = point - *center;
-        *center += (*size * 0.25) * diff.signum();
-        *size *= 0.5;
+    fn variable_depth_recursive(
+        &mut self,
+        begin: u32,
+        end: u32,
+        center: Vec3,
+        size: f32,
+        bucket_size: u32,
+    ) -> u32 {
+        if (end - begin) <= bucket_size {
+            let idx = 0x80000000 | (self.leaf.len() as u32);
+            self.leaf.push(LeafNode { begin, end });
+            return idx;
+        }
 
-        diff.is_negative_bitmask() as usize
+        let mut node: StemNode = Default::default();
+
+        for (idx, subspace) in self.subdivide(begin, end, center, size).enumerate() {
+            let child_idx = self.variable_depth_recursive(
+                subspace.begin,
+                subspace.end,
+                subspace.center,
+                subspace.size,
+                bucket_size,
+            );
+            node.childs_idx[idx] = child_idx as u32;
+        }
+
+        let node_idx = self.stems.len() as u32;
+        self.stems.push(node);
+
+        node_idx
     }
 }
 
 #[cfg(test)]
 mod tests {
     use glam::{vec3, Vec3};
-
-    use crate::types::{Index, Vector3D};
+    use rand::distributions::Uniform;
+    use rand::{thread_rng, Rng};
 
     use super::Octree;
 
-    #[test]
-    fn octree_default() {
-        let tree: Octree = Octree::default();
+    fn random_points(n: usize) -> Vec<Vec3> {
+        let mut rng = thread_rng();
+        let side = Uniform::new(-1.0f32, 1.0f32);
 
-        assert_eq!(tree.size, 2.0);
-        assert_eq!(tree.center, Vec3::ZERO);
-        assert_eq!(tree.points.len(), 0);
-        assert_eq!(tree.nodes.len(), 1);
-        assert_eq!(tree.nodes[0].parent, usize::root());
-        for i in 0..8 {
-            assert_eq!(tree.nodes[0].nodes[i].size, 0);
-            assert_eq!(tree.nodes[0].nodes[i].data, usize::empty());
+        (0..n)
+            .map(|_| vec3(rng.sample(side), rng.sample(side), rng.sample(side)))
+            .collect()
+    }
+
+    fn test_split<const DIM: usize>(n: usize) {
+        let mut tree = Octree {
+            stems: Default::default(),
+            leaf: Default::default(),
+            indices: (0..(n as u32)).collect::<Vec<u32>>(),
+            points: random_points(n),
+            center: Vec3::ZERO,
+            size: 0.0,
+        };
+
+        let pivot = tree.split::<DIM>(0, n as u32, 0.0) as usize;
+
+        for i in 0..(pivot as u32) {
+            assert!(tree.get_points(i)[DIM] < 0.0);
         }
-        assert_eq!(tree.root.size, 0);
-        assert_eq!(tree.root.data, usize::node_idx(0, 0));
+        for i in (pivot as u32)..(n as u32) {
+            assert!(tree.get_points(i)[DIM] >= 0.0);
+        }
     }
 
     #[test]
-    fn octree_add() {
-        let mut tree: Octree<usize, 5> = Octree::default();
-
-        tree.add(vec3(-0.1, -0.1, -0.1));
-        tree.add(vec3(0.1, 0.1, 0.1));
-        tree.add(vec3(0.15, 0.15, 0.15));
-        tree.add(vec3(0.2, 0.2, 0.2));
-        tree.add(vec3(0.3, 0.3, 0.3));
-        tree.add(vec3(0.35, 0.35, 0.35));
-        tree.add(vec3(0.4, 0.4, 0.4));
-
-        assert_eq!(tree.center, Vec3::ZERO);
-        assert_eq!(tree.size, 2.0);
-        assert_eq!(tree.root.data, 0);
-        assert_eq!(tree.root.size, 7);
-        assert_eq!(tree.nodes.len(), 3);
-        assert_eq!(tree.points.len(), 3);
-
-        // node block 0
-        assert_eq!(tree.nodes[0].parent, usize::root());
-        assert_eq!(tree.nodes[0].nodes[0].data, usize::node_idx(1, 0));
-        assert_eq!(tree.nodes[0].nodes[0].size, 6);
-        for i in 1..7 {
-            assert_eq!(tree.nodes[0].nodes[i].data, usize::empty());
-            assert_eq!(tree.nodes[0].nodes[i].size, 0);
+    fn octree_split() {
+        for _ in 0..16 {
+            for n in [0, 1, 7, 8, 15, 16, 128, 135] {
+                test_split::<0>(n);
+                test_split::<1>(n);
+                test_split::<2>(n);
+            }
         }
-        assert_eq!(tree.nodes[0].nodes[7].data, usize::points_idx(0));
-        assert_eq!(tree.nodes[0].nodes[7].size, 1);
-
-        // node block 1
-        assert_eq!(tree.nodes[1].parent, usize::node_idx(0, 0));
-        for i in 0..7 {
-            assert_eq!(tree.nodes[1].nodes[i].data, usize::empty());
-            assert_eq!(tree.nodes[1].nodes[i].size, 0);
-        }
-        assert_eq!(tree.nodes[1].nodes[7].data, usize::node_idx(2, 0));
-        assert_eq!(tree.nodes[1].nodes[7].size, 6);
-
-        // node block 2
-        assert_eq!(tree.nodes[2].parent, usize::node_idx(1, 7));
-        assert_eq!(tree.nodes[2].nodes[0].data, usize::points_idx(1));
-        assert_eq!(tree.nodes[2].nodes[0].size, 3);
-        for i in 1..7 {
-            assert_eq!(tree.nodes[2].nodes[i].data, usize::empty());
-            assert_eq!(tree.nodes[2].nodes[i].size, 0);
-        }
-        assert_eq!(tree.nodes[2].nodes[7].data, usize::points_idx(2));
-        assert_eq!(tree.nodes[2].nodes[7].size, 3);
-
-        // points block 0
-        assert_eq!(tree.points[0].parent, usize::node_idx(0, 7));
-        assert_eq!(tree.points[0].points[0], vec3(-0.1, -0.1, -0.1));
-
-        // points block 1
-        assert_eq!(tree.points[1].parent, usize::node_idx(2, 0));
-        assert_eq!(tree.points[1].points[0], vec3(0.3, 0.3, 0.3));
-        assert_eq!(tree.points[1].points[1], vec3(0.35, 0.35, 0.35));
-        assert_eq!(tree.points[1].points[2], vec3(0.4, 0.4, 0.4));
-
-        // points block 2
-        assert_eq!(tree.points[2].parent, usize::node_idx(2, 7));
-        assert_eq!(tree.points[2].points[0], vec3(0.1, 0.1, 0.1));
-        assert_eq!(tree.points[2].points[1], vec3(0.15, 0.15, 0.15));
-        assert_eq!(tree.points[2].points[2], vec3(0.2, 0.2, 0.2));
     }
 }
