@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-use crate::iterators::subdivide::Subdivide;
+use crate::iterators::{subdivide::Subdivide, tree::TreeIterator};
 
 pub trait AsPoint {
     fn get_point(&self) -> &Vec3;
@@ -14,22 +14,23 @@ impl AsPoint for Vec3 {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct StemNode {
-    pub(crate) childs_idx: [u32; 8],
+pub struct StemNode {
+    pub childs_idx: [u32; 8],
 }
 
 #[derive(Debug)]
-pub(crate) struct LeafNode {
+pub struct LeafNode {
     pub(crate) begin: u32,
     pub(crate) end: u32,
 }
 
 #[derive(Debug)]
 pub struct Octree<T: AsPoint + Clone = Vec3> {
-    pub(crate) stems: Vec<StemNode>,
-    pub(crate) leaf: Vec<LeafNode>,
-    pub(crate) indices: Vec<u32>,
-    pub(crate) points: Vec<T>,
+    pub(crate) root: u32,
+    pub stems: Vec<StemNode>,
+    pub leaf: Vec<LeafNode>,
+    pub indices: Vec<u32>,
+    pub points: Vec<T>,
     pub(crate) center: Vec3,
     pub(crate) size: f32,
 }
@@ -39,6 +40,7 @@ impl<T: AsPoint + Clone> Octree<T> {
         let (center, size) = Self::get_dimentions(points);
 
         let mut tree = Octree {
+            root: 0,
             stems: Default::default(),
             leaf: Default::default(),
             indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
@@ -46,7 +48,7 @@ impl<T: AsPoint + Clone> Octree<T> {
             center: center,
             size: size,
         };
-        tree.fixed_depth_recursive(0, points.len() as u32, center, size, depth);
+        tree.root = tree.fixed_depth_recursive(0, points.len() as u32, center, size, depth);
 
         tree
     }
@@ -55,6 +57,7 @@ impl<T: AsPoint + Clone> Octree<T> {
         let (center, size) = Self::get_dimentions(points);
 
         let mut tree = Octree {
+            root: 0,
             stems: Default::default(),
             leaf: Default::default(),
             indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
@@ -62,7 +65,8 @@ impl<T: AsPoint + Clone> Octree<T> {
             center: center,
             size: size,
         };
-        tree.variable_depth_recursive(0, points.len() as u32, center, size, bucket_size);
+        tree.root =
+            tree.variable_depth_recursive(0, points.len() as u32, center, size, bucket_size);
 
         tree
     }
@@ -83,8 +87,13 @@ impl<T: AsPoint + Clone> Octree<T> {
     }
 
     #[inline]
-    fn get_points(&self, idx: u32) -> &Vec3 {
+    pub(crate) fn get_point(&self, idx: u32) -> &Vec3 {
         &self.points[self.indices[idx as usize] as usize].get_point()
+    }
+
+    #[inline]
+    pub(crate) fn get_data(&self, idx: u32) -> &T {
+        &self.points[self.indices[idx as usize] as usize]
     }
 
     #[inline]
@@ -100,8 +109,8 @@ impl<T: AsPoint + Clone> Octree<T> {
         let mut idx_up: u32 = end - 1;
 
         while idx_down <= idx_up {
-            let error_down = self.get_points(idx_down)[DIM] >= pivot;
-            let error_up = self.get_points(idx_up)[DIM] < pivot;
+            let error_down = self.get_point(idx_down)[DIM] >= pivot;
+            let error_up = self.get_point(idx_up)[DIM] < pivot;
 
             if error_down && error_up {
                 self.swap_points(idx_down, idx_up);
@@ -246,6 +255,7 @@ mod tests {
 
     fn test_split<const DIM: usize>(n: usize) {
         let mut tree = Octree {
+            root: 0,
             stems: Default::default(),
             leaf: Default::default(),
             indices: (0..(n as u32)).collect::<Vec<u32>>(),
@@ -257,10 +267,10 @@ mod tests {
         let pivot = tree.split::<DIM>(0, n as u32, 0.0) as usize;
 
         for i in 0..(pivot as u32) {
-            assert!(tree.get_points(i)[DIM] < 0.0);
+            assert!(tree.get_point(i)[DIM] < 0.0);
         }
         for i in (pivot as u32)..(n as u32) {
-            assert!(tree.get_points(i)[DIM] >= 0.0);
+            assert!(tree.get_point(i)[DIM] >= 0.0);
         }
     }
 

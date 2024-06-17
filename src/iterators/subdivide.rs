@@ -15,7 +15,7 @@ pub(crate) struct Subspace {
 }
 
 impl Subdivide {
-    fn offset(idx: usize) -> Vec3 {
+    pub(super) fn offset(idx: usize) -> Vec3 {
         match idx {
             0 => vec3(-1.0, -1.0, -1.0),
             1 => vec3(-1.0, -1.0, 1.0),

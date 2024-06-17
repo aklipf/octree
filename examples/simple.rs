@@ -6,7 +6,7 @@ use rand_distr::Normal;
 use std::time::Instant;
 
 fn add_n_points(n: i32) {
-    let mut rng = thread_rng();
+    let mut rng: rand::prelude::ThreadRng = thread_rng();
     let side = Normal::new(0.0f32, 1.0f32).unwrap();
 
     let mut points: Vec<Vec3> = Default::default();
