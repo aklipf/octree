@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-use crate::iterators::{subdivide::Subdivide, tree::TreeIterator};
+use crate::iterators::subdivide::Subdivide;
 
 pub trait AsPoint {
     fn get_point(&self) -> &Vec3;
@@ -24,25 +24,32 @@ pub struct LeafNode {
     pub(crate) end: u32,
 }
 
+#[derive(Debug, Default)]
+pub struct EmptyNode {}
+
 #[derive(Debug)]
-pub struct Octree<T: AsPoint + Clone = Vec3> {
+pub struct Octree<P: AsPoint + Clone = Vec3, N: Default = EmptyNode> {
     pub(crate) root: u32,
     pub stems: Vec<StemNode>,
-    pub leaf: Vec<LeafNode>,
+    pub leafs: Vec<LeafNode>,
+    pub stems_data: Vec<N>,
+    pub leafs_data: Vec<N>,
     pub indices: Vec<u32>,
-    pub points: Vec<T>,
+    pub points: Vec<P>,
     pub(crate) center: Vec3,
     pub(crate) size: f32,
 }
 
-impl<T: AsPoint + Clone> Octree<T> {
-    pub fn fixed_depth(points: &[T], depth: u32) -> Octree<T> {
+impl<P: AsPoint + Clone, N: Default> Octree<P, N> {
+    pub fn fixed_depth(points: &[P], depth: u32) -> Octree<P, N> {
         let (center, size) = Self::get_dimentions(points);
 
         let mut tree = Octree {
             root: 0,
             stems: Default::default(),
-            leaf: Default::default(),
+            leafs: Default::default(),
+            stems_data: Default::default(),
+            leafs_data: Default::default(),
             indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
             points: points.to_vec(),
             center: center,
@@ -53,13 +60,15 @@ impl<T: AsPoint + Clone> Octree<T> {
         tree
     }
 
-    pub fn variable_depth(points: &[T], bucket_size: u32) -> Octree<T> {
+    pub fn variable_depth(points: &[P], bucket_size: u32) -> Octree<P, N> {
         let (center, size) = Self::get_dimentions(points);
 
         let mut tree = Octree {
             root: 0,
             stems: Default::default(),
-            leaf: Default::default(),
+            leafs: Default::default(),
+            stems_data: Default::default(),
+            leafs_data: Default::default(),
             indices: (0..(points.len() as u32)).collect::<Vec<u32>>(),
             points: points.to_vec(),
             center: center,
@@ -71,7 +80,7 @@ impl<T: AsPoint + Clone> Octree<T> {
         tree
     }
 
-    fn get_dimentions(points: &[T]) -> (Vec3, f32) {
+    fn get_dimentions(points: &[P]) -> (Vec3, f32) {
         let mut min: Vec3 = Vec3::INFINITY;
         let mut max: Vec3 = Vec3::NEG_INFINITY;
 
@@ -92,7 +101,7 @@ impl<T: AsPoint + Clone> Octree<T> {
     }
 
     #[inline]
-    pub(crate) fn get_data(&self, idx: u32) -> &T {
+    pub(crate) fn get_data(&self, idx: u32) -> &P {
         &self.points[self.indices[idx as usize] as usize]
     }
 
@@ -175,11 +184,12 @@ impl<T: AsPoint + Clone> Octree<T> {
         depth: u32,
     ) -> u32 {
         if depth == 0 || (end - begin) <= 1 {
-            let idx = 0x80000000 | (self.leaf.len() as u32);
-            self.leaf.push(LeafNode {
+            let idx = 0x80000000 | (self.leafs.len() as u32);
+            self.leafs.push(LeafNode {
                 begin: begin as u32,
                 end: end as u32,
             });
+            self.leafs_data.push(Default::default());
             return idx;
         }
 
@@ -198,6 +208,7 @@ impl<T: AsPoint + Clone> Octree<T> {
 
         let node_idx = self.stems.len() as u32;
         self.stems.push(node);
+        self.stems_data.push(Default::default());
 
         node_idx
     }
@@ -211,8 +222,13 @@ impl<T: AsPoint + Clone> Octree<T> {
         bucket_size: u32,
     ) -> u32 {
         if (end - begin) <= bucket_size {
-            let idx = 0x80000000 | (self.leaf.len() as u32);
-            self.leaf.push(LeafNode { begin, end });
+            let idx = 0x80000000 | (self.leafs.len() as u32);
+            self.leafs.push(LeafNode { begin, end });
+
+            if std::mem::size_of::<N>() != 0 {
+                self.leafs_data.push(Default::default());
+            }
+
             return idx;
         }
 
@@ -231,6 +247,9 @@ impl<T: AsPoint + Clone> Octree<T> {
 
         let node_idx = self.stems.len() as u32;
         self.stems.push(node);
+        if std::mem::size_of::<N>() != 0 {
+            self.stems_data.push(Default::default());
+        }
 
         node_idx
     }
@@ -242,7 +261,7 @@ mod tests {
     use rand::distributions::Uniform;
     use rand::{thread_rng, Rng};
 
-    use super::Octree;
+    use super::{EmptyNode, Octree};
 
     fn random_points(n: usize) -> Vec<Vec3> {
         let mut rng = thread_rng();
@@ -254,10 +273,12 @@ mod tests {
     }
 
     fn test_split<const DIM: usize>(n: usize) {
-        let mut tree = Octree {
+        let mut tree = Octree::<Vec3, EmptyNode> {
             root: 0,
             stems: Default::default(),
-            leaf: Default::default(),
+            leafs: Default::default(),
+            stems_data: Default::default(),
+            leafs_data: Default::default(),
             indices: (0..(n as u32)).collect::<Vec<u32>>(),
             points: random_points(n),
             center: Vec3::ZERO,

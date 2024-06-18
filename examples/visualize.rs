@@ -2,7 +2,7 @@ use glam::{vec3, Vec3};
 use macroquad::prelude as quad;
 use macroquad::prelude::Color;
 use octree::iterators::tree::TreeElements;
-use octree::octree::Octree;
+use octree::octree::{EmptyNode, Octree};
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use rand_distr::Normal;
@@ -19,7 +19,7 @@ fn random_points(n: usize) -> Vec<Vec3> {
 #[macroquad::main("Octree")]
 async fn main() {
     let points = random_points(1000);
-    let tree = Octree::variable_depth(&points, 5);
+    let tree: Octree<Vec3, EmptyNode> = Octree::variable_depth(&points, 5);
     let scale = 80.0;
     println!("{tree:#?}");
 

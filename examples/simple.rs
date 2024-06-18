@@ -1,5 +1,5 @@
 use glam::Vec3;
-use octree::octree::Octree;
+use octree::octree::*;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use rand_distr::Normal;
@@ -16,13 +16,13 @@ fn add_n_points(n: i32) {
     }
 
     let now = Instant::now();
-    Octree::fixed_depth(&points, 6);
+    Octree::<Vec3, EmptyNode>::fixed_depth(&points, 6);
     let elapsed = now.elapsed();
 
     println!("fixed depth {n} points => {elapsed:.3?}");
 
     let now = Instant::now();
-    Octree::variable_depth(&points, 5);
+    Octree::<Vec3, EmptyNode>::variable_depth(&points, 5);
     let elapsed = now.elapsed();
 
     println!("variable depth {n} points => {elapsed:.3?}");
