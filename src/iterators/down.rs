@@ -1,11 +1,16 @@
+use glam::Vec3;
+
 use crate::octree::{AsPoint, Octree};
 
 use super::{
-    iter::{LeafNode, Node, StemNode, TreeIterator},
+    iter::{IterLeafNode, IterNode, IterStemNode},
     subdivide::Subdivide,
 };
 
-type DownIterator<'a, P, N> = TreeIterator<'a, P, N>;
+pub struct DownIterator<'a, T: AsPoint + Clone, N: Default> {
+    pub(crate) tree: &'a Octree<T, N>,
+    pub(crate) stack: Vec<(u32, Vec3, f32)>,
+}
 
 pub trait IntoDownIterator {
     type Item;
@@ -14,7 +19,7 @@ pub trait IntoDownIterator {
 }
 
 impl<'a, P: AsPoint + Clone, N: Default> IntoDownIterator for &'a Octree<P, N> {
-    type Item = Node<'a, P, N>;
+    type Item = IterNode;
     type Iter = DownIterator<'a, P, N>;
 
     fn iter_down(self) -> Self::Iter {
@@ -26,7 +31,7 @@ impl<'a, P: AsPoint + Clone, N: Default> IntoDownIterator for &'a Octree<P, N> {
 }
 
 impl<'a, T: AsPoint + Clone, N: Default> Iterator for DownIterator<'a, T, N> {
-    type Item = Node<'a, T, N>;
+    type Item = IterNode;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.stack.len() == 0 {
@@ -43,16 +48,14 @@ impl<'a, T: AsPoint + Clone, N: Default> Iterator for DownIterator<'a, T, N> {
                     0.5 * size,
                 ));
             }
-            return Some(Node::Stem(StemNode {
-                tree: &self.tree,
+            return Some(IterNode::Stem(IterStemNode {
                 node_idx: idx,
                 center: center,
                 size: size,
             }));
         }
 
-        Some(Node::Leaf(LeafNode {
-            tree: &self.tree,
+        Some(IterNode::Leaf(IterLeafNode {
             node_idx: idx & 0x7fffffff,
             center: center,
             size: size,

@@ -1,6 +1,11 @@
+use std::borrow::BorrowMut;
+
 use glam::Vec3;
 
-use crate::iterators::subdivide::Subdivide;
+use crate::iterators::{
+    iter::{IterLeafNode, IterNode},
+    subdivide::Subdivide,
+};
 
 pub trait AsPoint {
     fn get_point(&self) -> &Vec3;
@@ -252,6 +257,33 @@ impl<P: AsPoint + Clone, N: Default> Octree<P, N> {
         }
 
         node_idx
+    }
+
+    pub fn points(&self, node: &IterLeafNode) -> Vec<&P> {
+        let mut result = Vec::<&P>::new();
+        let node = &self.leafs[node.node_idx as usize];
+        for i in node.begin..node.end {
+            let idx = self.indices[i as usize] as usize;
+            result.push(&self.points[idx]);
+        }
+
+        return result;
+    }
+
+    pub fn node_data(&self, node: IterNode) -> &N {
+        match node {
+            IterNode::Stem(stem) => &self.stems_data[stem.node_idx as usize],
+            IterNode::Leaf(leaf) => &self.leafs_data[leaf.node_idx as usize],
+        }
+    }
+
+    pub fn mut_node_data(&self, node: IterNode) -> &mut N {
+        unsafe {
+            match node {
+                IterNode::Stem(stem) => &mut self.stems_data[stem.node_idx as usize],
+                IterNode::Leaf(leaf) => &mut self.leafs_data[leaf.node_idx as usize],
+            }
+        }
     }
 }
 

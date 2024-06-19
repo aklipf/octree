@@ -1,7 +1,10 @@
 use glam::{vec3, Vec3};
 use macroquad::prelude as quad;
 use macroquad::prelude::Color;
+use octree::iterators::down::IntoDownIterator;
+use octree::iterators::iter::{IterNode, IterStemNode};
 use octree::iterators::tree::TreeElements;
+use octree::iterators::up::IntoUpIterator;
 use octree::octree::{EmptyNode, Octree};
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
@@ -16,12 +19,21 @@ fn random_points(n: usize) -> Vec<Vec3> {
         .collect()
 }
 
+#[derive(Default, Debug)]
+struct SubspaceNode {
+    weigth: f32,
+}
+
 #[macroquad::main("Octree")]
 async fn main() {
-    let points = random_points(1000);
-    let tree: Octree<Vec3, EmptyNode> = Octree::variable_depth(&points, 5);
+    let points = random_points(32);
+    let mut tree: Octree<Vec3, SubspaceNode> = Octree::variable_depth(&points, 5);
     let scale = 80.0;
     println!("{tree:#?}");
+
+    for node in tree.iter_up() {
+        let mut data = tree.mut_node_data(node);
+    }
 
     loop {
         quad::clear_background(quad::BLACK);
